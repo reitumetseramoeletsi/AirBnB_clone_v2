@@ -1,7 +1,10 @@
 #!/usr/bin/python3
 """This is the console for AirBnB"""
-import re
 import cmd
+import shlex
+import json
+import re
+from ast import literal_eval
 from models import storage
 from datetime import datetime
 from models.base_model import BaseModel
@@ -18,8 +21,9 @@ class HBNBCommand(cmd.Cmd):
     """this class is entry point of the command interpreter
     """
     prompt = "(hbnb) "
-    all_classes = {"BaseModel", "User", "State", "City",
-                   "Amenity", "Place", "Review"}
+    all_classes = {"BaseModel": BaseModel, "User": User, "State": State,
+                   "City": City, "Amenity": Amenity, "Place": Place,
+                   "Review": Review}
 
     def emptyline(self):
         """Ignores empty spaces"""
@@ -33,45 +37,32 @@ class HBNBCommand(cmd.Cmd):
         """Quit command to exit the program at end of file"""
         return True
 
-    def do_create(self, line):
-        """Creates a new instance of BaseModel, saves it
-        Exceptions:
-            SyntaxError: when there is no args given
-            NameError: when there is no object taht has the name
-        """
-        if line == "" or line is None:
-            print("** class name missing **")
-        else:
-            my_list = line.split(" ")
-            classname = my_list[0]
-            if classname not in storage.classes():
-                print("** class doesn't exist **")
-                return
-            obj = eval("{}()".format(classname))
-            for i in range(1, len(my_list)):
-                rex = r'^(\S+)\=(\S+)'
-                match = re.search(rex, my_list[i])
-                if not match:
+    def do_create(self, args):
+        """Creates a new instance of BaseModel, saves it"""
+        if not args:
+            return print("** class name missing **")
+
+        data = args.split()
+        if data[0] not in self.all_classes:
+            return print("** class doesn't exist **")
+        new_instance = HBNBCommand.all_classes[data[0]]()
+        for item in data[1:]:
+            proval = item.split('=')
+            key = proval[0]
+            val = proval[1].replace('_', ' ')
+
+            if '"' in val:
+                val = val.strip('"')
+            else:
+                try:
+                    val = eval(val)
+                except (SyntaxError, NameError):
                     continue
-                key = match.group(1)
-                value = match.group(2)
-                cast = None
-                if not re.search('^".*"$', value):
-                    if '.' in value:
-                        cast = float
-                    else:
-                        cast = int
-                else:
-                    value = value.replace('"', '')
-                    value = value.replace('_', ' ')
-                if cast:
-                    try:
-                        value = cast(value)
-                    except ValueError:
-                        pass
-                setattr(obj, key, value)
-            obj.save()
-            print("{}".format(obj.id))
+
+            setattr(new_instance, key, val)
+
+        new_instance.save()
+        print("{}".format(new_instance.id))
 
     def do_show(self, line):
         """Prints the string representation of an instance
@@ -81,20 +72,28 @@ class HBNBCommand(cmd.Cmd):
             IndexError: when there is no id given
             KeyError: when there is no valid id given
         """
-        if line == "" or line is None:
-            print("** class name missing **")
-        else:
-            words = line.split(' ')
-            if words[0] not in storage.classes():
-                print("** class doesn't exist **")
-            elif len(words) < 2:
-                print("** instance id missing **")
+        try:
+            if not line:
+                raise SyntaxError()
+            my_list = line.split(" ")
+            if my_list[0] not in self.all_classes:
+                raise NameError()
+            if len(my_list) < 2:
+                raise IndexError()
+            objects = storage.all()
+            key = my_list[0] + '.' + my_list[1]
+            if key in objects:
+                print(objects[key])
             else:
-                key = "{}.{}".format(words[0], words[1])
-                if key not in storage.all():
-                    print("** no instance found **")
-                else:
-                    print(storage.all()[key])
+                raise KeyError()
+        except SyntaxError:
+            print("** class name missing **")
+        except NameError:
+            print("** class doesn't exist **")
+        except IndexError:
+            print("** instance id missing **")
+        except KeyError:
+            print("** no instance found **")
 
     def do_destroy(self, line):
         """Deletes an instance based on the class name and id
@@ -133,12 +132,7 @@ class HBNBCommand(cmd.Cmd):
         Exceptions:
             NameError: when there is no object taht has the name
         """
-        if line:
-            args = line.split(" ")
-            if args[0] not in self.all_classes:
-                print("** class doesn't exist **")
-                return
-            objects = storage.all(line)
+
         my_list = []
         if not line:
             objects = storage.all()
@@ -146,17 +140,16 @@ class HBNBCommand(cmd.Cmd):
                 my_list.append(objects[key])
             print(my_list)
             return
-        # try:
-            # args = line.split(" ")
-            # if args[0] not in self.all_classes:
-            #     raise NameError()
-        for key in objects:
-            name = key.split('.')
-            if name[0] == args[0]:
-                my_list.append(objects[key])
-        print(my_list)
-        # except NameError:
-        #     print("** class doesn't exist **")
+        try:
+            args = line.split(" ")
+            if args[0] not in self.all_classes:
+                raise NameError()
+            objects = storage.all(args[0])
+            for value in objects.values():
+                my_list.append(value)
+            print(my_list)
+        except NameError:
+            print("** class doesn't exist **")
 
     def do_update(self, line):
         """Updates an instanceby adding or updating attribute
